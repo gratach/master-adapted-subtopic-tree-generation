@@ -6,6 +6,7 @@ from json import loads, dumps
 from scipy.special import comb # pip install scipy
 import matplotlib.pyplot as plt
 from math import sqrt
+from random import shuffle
 rootpath = Path(__file__).parent
 class SubtopicTreeBranch:
     def __init__(self, name, parent, isLeaf = False):
@@ -40,7 +41,126 @@ class SubtopicTreeBranch:
         self.leafCount += delta
         if self.parent:
             self.parent.updateLeafCount(delta)
-    def addTopic(self, name):
+    def addTopic_simpleFreeAssociationAlgorithm(self, name):
+        if self.isLeaf:
+            raise Exception("Cannot add topic to leaf node")
+        subtopics = [x for x in self.children if not x.isLeaf]
+        shuffle(subtopics) # To ensure that the evaluation and the creation query differes
+        if len(subtopics) > 0:
+            subtopicNameSelection = "{" + ", ".join([f'{i}: "{x.name}"' for i, x in enumerate(subtopics)]) + "}"
+            query = f'Which of the topics {subtopicNameSelection} is most likely to contain "{name}" as a subtopic? Return only the number without description.'
+            def answerConversion(answer):
+                index = int(answer)
+                assert 0 <= index < len(subtopics)
+                return index
+            index, subtopicChosen = tryRecieveAnswer(query, gpt_3_5_turbo_completion, answerConversion)
+            if not subtopicChosen:
+                print(f"Failed to choose subtopic of topic {self.name} for keyword {name}")
+                SubtopicTreeBranch(name, self, True)
+                return
+            subtopics[index].addTopic_simpleFreeAssociationAlgorithm(name)
+        else:
+            SubtopicTreeBranch(name, self, True)
+            leafs = [x for x in self.children if x.isLeaf]
+            if len(leafs) > 5:
+                query = f'In which subtopics can the topic "{self.name}" be divided? Return nothing but the list of subtopics formatted as: ["subtopic1", "subtopic2", ...]'
+                def answerConversion(answer):
+                    subtopics = loads(answer)
+                    assert isinstance(subtopics, list)
+                    for subtopic in subtopics:
+                        assert isinstance(subtopic, str)
+                    return subtopics
+                subtopics, subtopicsFound = tryRecieveAnswer(query, gpt_3_5_turbo_completion, answerConversion)
+                if not subtopicsFound:
+                    print(f"Failed to find subtopics of topic {self.name}")
+                    return
+                for leaf in leafs:
+                    leaf.changeParent(None)
+                for subtopic in subtopics:
+                    SubtopicTreeBranch(subtopic, self, False)
+                for leaf in leafs:
+                    self.addTopic_simpleFreeAssociationAlgorithm(leaf.name)
+    def addTopic_freeAssociationAlgorithm(self, name):
+        if self.isLeaf:
+            raise Exception("Cannot add topic to leaf node")
+        subtopics = [x for x in self.children if not x.isLeaf]
+        shuffle(subtopics) # To ensure that the evaluation and the creation query differes
+        if len(subtopics) > 0:
+            # If there are to many subtopics, ask the user to choose the most likely one
+            if len(subtopics) > 14:
+                subtopicNameSelection = "{" + ", ".join([f'{i}: "{x.name}"' for i, x in enumerate(subtopics)]) + "}"
+                query = f'Which of the topics {subtopicNameSelection} is most likely to contain "{name}" as a subtopic? Return only the number without description.'
+                def answerConversion(answer):
+                    index = int(answer)
+                    assert 0 <= index < len(subtopics)
+                    return index
+                index, subtopicChosen = tryRecieveAnswer(query, gpt_3_5_turbo_completion, answerConversion)
+                if not subtopicChosen:
+                    print(f"Failed to choose subtopic of topic {self.name} for keyword {name}")
+                    SubtopicTreeBranch(name, self, True)
+                    return
+                subtopics[index].addTopic_freeAssociationAlgorithm(name)
+            # If there are few subtopics, ask the user if the keyword belongs to one of them and leave the option to create a new subtopic
+            else:
+                if len(subtopics) == 1:
+                    query = f'Is the topic {subtopics[0].name} including "{name}" as a subtopic? Return 1 if yes, 0 if no.'
+                else:
+                    subtopicNameSelection = "{" + ", ".join([f'{i + 1} : "{x.name}"' for i, x in enumerate(subtopics)]) + "}"
+                    query = f'Which of the topics {subtopicNameSelection} contains "{name}" as a subtopic? Return only the number without description. Return 0 if none.'
+                def answerConversion(answer):
+                    index = int(answer)
+                    assert 0 <= index <= len(subtopics)
+                    return index
+                index, subtopicChosen = tryRecieveAnswer(query, gpt_3_5_turbo_completion, answerConversion)
+                if not subtopicChosen:
+                    print(f"Failed to choose subtopic of topic {self.name} for keyword {name}")
+                    index = 0
+                # Add the topic to the chosen subtopic
+                if index > 0:
+                    subtopics[index - 1].addTopic_freeAssociationAlgorithm(name)
+                else:
+                    subtopicNameSelection = "{" + ", ".join([f'"{x.name}"' for x in subtopics]) + "}"
+                    query = f'The topic "{self.name}" has the subtopic categories "{subtopicNameSelection}. In which category does the term "{name}" belong? Return the name of one of the existing categories or the name of a new subtopic category of "{self.name}". Return nothing but the name without description. Make sure that the returned term is surrounded by quotation marks.'
+                    def answerConversion(answer):
+                        assert answer.startswith('"') and answer.endswith('"')
+                        answer =  answer[1:-1]
+                        assert not '"' in answer
+                        return answer
+                    newSubtopicName, newSubtopicAdded = tryRecieveAnswer(query, gpt_4_turbo_completion, answerConversion)
+                    if not newSubtopicAdded:
+                        print(f"Failed to add new subtopic of topic {self.name} for keyword {name}")
+                        SubtopicTreeBranch(name, self, True)
+                    else:
+                        newbranch = None
+                        for subtopic in subtopics:
+                            if subtopic.name == newSubtopicName:
+                                newbranch = subtopic
+                                break
+                        if not newbranch:
+                            newbranch = SubtopicTreeBranch(newSubtopicName, self, False)
+                        newbranch.addTopic_freeAssociationAlgorithm(name)
+        else:
+            SubtopicTreeBranch(name, self, True)
+            leafs = [x for x in self.children if x.isLeaf]
+            if len(leafs) > 5:
+                query = f'In which subtopics can the topic "{self.name}" be divided? Return nothing but the list of subtopics formatted as: ["subtopic1", "subtopic2", ...]'
+                def answerConversion(answer):
+                    subtopics = loads(answer)
+                    assert isinstance(subtopics, list)
+                    for subtopic in subtopics:
+                        assert isinstance(subtopic, str)
+                    return subtopics
+                subtopics, subtopicsFound = tryRecieveAnswer(query, gpt_4_turbo_completion, answerConversion)
+                if not subtopicsFound:
+                    print(f"Failed to find subtopics of topic {self.name}")
+                    return
+                for leaf in leafs:
+                    leaf.changeParent(None)
+                for subtopic in subtopics:
+                    SubtopicTreeBranch(subtopic, self, False)
+                for leaf in leafs:
+                    self.addTopic_freeAssociationAlgorithm(leaf.name)
+    def addTopic_subdevisionAlgorithm(self, name):
         if self.isLeaf:
             raise Exception("Cannot add topic to leaf node")
         subtopics = [x for x in self.children if not x.isLeaf]
@@ -165,24 +285,21 @@ class SubtopicTreeBranch:
             print("Invalid choice")
             return self.interactiveNavigation
     def searchSubbranchThatMightContain(self, name):
-        for child in self.children:
+        children = self.children.copy()
+        if len(children) == 0:
+            return None
+        shuffle(children)
+        for child in children:
             if child.isLeaf and name == child.name:
                 return child
-        maxTries = 5
-        tryNumber = 0
-        while tryNumber < maxTries:
-            subtopicNameSelection = "{" + ", ".join([f'{i + 1} : "{x.name}"' for i, x in enumerate(self.children)]) + "}"
-            query = f'Which of the topics {subtopicNameSelection} is most likely to contain "{name}" as a subtopic? Return only the number without description. Return 0 if none.'
-            answer = gpt_3_5_turbo_completion(query)
-            try:
-                index = int(answer)
-                assert 0 <= index <= len(self.children)
-                return self.children[index - 1] if index > 0 else None
-            except:
-                pass
-            tryNumber += 1
-        print(f"Failed to choose subtopic of topic {self.name} for keyword {name}")
-        return None
+        subtopicNameSelection = "{" + ", ".join([f'{i + 1} : "{x.name}"' for i, x in enumerate(children)]) + "}"
+        query = f'Which of the topics {subtopicNameSelection} is most likely to contain "{name}" as a subtopic? Return only the number without description. Return 0 if none.'
+        def answerConversion(answer):
+            index = int(answer)
+            assert 0 <= index <= len(children)
+            return children[index - 1] if index > 0 else None
+        answer, subtopicChosen = tryRecieveAnswer(query, gpt_3_5_turbo_completion, answerConversion)
+        return answer
     def iterateLeaves(self):
         if self.isLeaf:
             yield self
@@ -191,7 +308,18 @@ class SubtopicTreeBranch:
                 yield from child.iterateLeaves()
 
 
-
+def tryRecieveAnswer(query, completionFunction, answerConversion = lambda x: True, maxTries = 10):
+    tryNumber = 0
+    while tryNumber < maxTries:
+        answer = completionFunction(query)
+        try:
+            answer = answerConversion(answer)
+            return (answer, True)
+        except:
+            pass
+        tryNumber += 1
+    print(f"Failed to recieve answer for query: {query}")
+    return (None, False)
 
 openaiClient = OpenAI()
 def gpt_3_5_turbo_completion(query):
@@ -234,13 +362,31 @@ def saveSubtopicTree(rootBranch):
     with treepath.open("w") as f:
         f.write(dumps(rootBranch.safeAsJsonDict()))
 
-def main_addTechnicalTermsToSubtopicTree():
+def main_addTechnicalTermsToSubtopicTree_subdevisionAlgorithm():
     rootBranch = loadSubtopicTree()
     with (rootpath / "technical_terms.txt").open("r") as f:
         technical_terms = f.read().split("\n")
     for technical_term in technical_terms:
         if not rootBranch.findLeaf(technical_term):
-            rootBranch.addTopic(technical_term)
+            rootBranch.addTopic_subdevisionAlgorithm(technical_term)
+    saveSubtopicTree(rootBranch)
+
+def main_addTechnicalTermsToSubtopicTree_freeAssociationAlgorithm():
+    rootBranch = loadSubtopicTree()
+    with (rootpath / "technical_terms.txt").open("r") as f:
+        technical_terms = f.read().split("\n")
+    for technical_term in technical_terms:
+        if not rootBranch.findLeaf(technical_term):
+            rootBranch.addTopic_freeAssociationAlgorithm(technical_term)
+    saveSubtopicTree(rootBranch)
+
+def main_addTechnicalTermsToSubtopicTree_simpleFreeAssociationAlgorithm():
+    rootBranch = loadSubtopicTree()
+    with (rootpath / "technical_terms.txt").open("r") as f:
+        technical_terms = f.read().split("\n")
+    for technical_term in technical_terms:
+        if not rootBranch.findLeaf(technical_term):
+            rootBranch.addTopic_simpleFreeAssociationAlgorithm(technical_term)
     saveSubtopicTree(rootBranch)
 
 def main_navigateSubtopicTree():
@@ -327,13 +473,14 @@ def main_subtopicTreeStatistics():
             numberLeafNodes += 1
             leafDepthSum += depth
         else:
-            numberJunctionNodes += 1
+            if branch.leafCount > 0:
+                numberJunctionNodes += 1
             for child in branch.children:
                 traverseBranch(child, depth + 1)
     traverseBranch(rootBranch, 0)
     print(f"Number of leaf nodes: {numberLeafNodes}")
     print(f"Average depth of leaf nodes: {leafDepthSum / numberLeafNodes}")
-    print(f"Number of junction nodes: {numberJunctionNodes}")
+    print(f"Number of supporting junction nodes: {numberJunctionNodes}")
 
 def main_searchForTerms():
     numberOfSearches = 100
@@ -360,9 +507,10 @@ def main_searchForTerms():
             f.flush()
         f.write("]\n")
 
-def main_calculateAverageViewedTerms():
+def main_calculateSearchStatistics():
     rootBranch = loadSubtopicTree()
     numberOfLeafNodes = rootBranch.leafCount
+    numberOfLeafBytes = sum([len(x.name) for x in rootBranch.iterateLeaves()])
     with (rootpath / "search_results.txt").open("r") as f:
         search_results = loads(f.read())
     numberOfSearches = len(search_results)
@@ -370,19 +518,33 @@ def main_calculateAverageViewedTerms():
     numberNotFound = 0
     numberViewedNodesOfFoundSearches = 0
     numberViewedNodesOfNotFoundSearches = 0
+    numberViewedBytesOfFoundSearches = 0
+    numberViewedBytesOfNotFoundSearches = 0
     for result in search_results:
         if result[1]:
             numberFound += 1
             numberViewedNodesOfFoundSearches += result[3]
+            numberViewedBytesOfFoundSearches += result[4]
         else:
             numberNotFound += 1
             numberViewedNodesOfNotFoundSearches += result[3]
+            numberViewedBytesOfNotFoundSearches += result[4]
     foundFraction = numberFound / numberOfSearches if numberOfSearches > 0 else None
     averageViewedNodesOfFoundSearches = numberViewedNodesOfFoundSearches / numberFound if numberFound > 0 else None
     averageViewedNodesOfNotFoundSearches = numberViewedNodesOfNotFoundSearches / numberNotFound if numberNotFound > 0 else None
     averageViewedNodesPerSearch = ((1 / foundFraction) - 1) * averageViewedNodesOfNotFoundSearches + averageViewedNodesOfFoundSearches if foundFraction else None
     viewedNodesFraction = averageViewedNodesPerSearch / numberOfLeafNodes if numberOfLeafNodes > 0 else None
+    averageViewedBytesOfFoundSearches = numberViewedBytesOfFoundSearches / numberFound if numberFound > 0 else None
+    averageViewedBytesOfNotFoundSearches = numberViewedBytesOfNotFoundSearches / numberNotFound if numberNotFound > 0 else None
+    averageViewedBytesPerSearch = ((1 / foundFraction) - 1) * averageViewedBytesOfNotFoundSearches + averageViewedBytesOfFoundSearches if foundFraction else None
+    viewedBytesFraction = averageViewedBytesPerSearch / numberOfLeafBytes if numberOfLeafBytes > 0 else None
     # Calculate the errors
+    numberFoundVariance = 0
+    for k in range(1, numberOfSearches + 1):
+        numberFoundVariance += ((numberFound - k) ** 2) * comb(numberOfSearches, k, exact=True) * (foundFraction ** k) * ((1 - foundFraction) ** (numberOfSearches - k))
+    numberFoundError = sqrt(numberFoundVariance)
+    foundFractionError = numberFoundError / numberOfSearches
+
     averageViewedNodesOfFoundSearchesVariance = 0
     averageViewedNodesOfNotFoundSearchesVariance = 0
     for result in search_results:
@@ -392,17 +554,28 @@ def main_calculateAverageViewedTerms():
             averageViewedNodesOfNotFoundSearchesVariance += (result[3] - averageViewedNodesOfNotFoundSearches) ** 2
     averageViewedNodesOfFoundSearchesError = sqrt(averageViewedNodesOfFoundSearchesVariance / numberFound / (numberFound - 1)) if numberFound > 1 else None
     averageViewedNodesOfNotFoundSearchesError = sqrt(averageViewedNodesOfNotFoundSearchesVariance / numberNotFound / (numberNotFound - 1)) if numberNotFound > 1 else None
-    numberFoundVariance = 0
-    for k in range(1, numberOfSearches + 1):
-        numberFoundVariance += ((numberFound - k) ** 2) * comb(numberOfSearches, k, exact=True) * (foundFraction ** k) * ((1 - foundFraction) ** (numberOfSearches - k))
-    numberFoundError = sqrt(numberFoundVariance)
-    foundFractionError = numberFoundError / numberOfSearches
     averageViewedNodesPerSearchError = sqrt(
         (averageViewedNodesOfFoundSearchesError ** 2) +
         (((1 / foundFraction - 1) * averageViewedNodesOfNotFoundSearchesError) ** 2) +
         ((averageViewedNodesOfNotFoundSearches / (foundFraction ** 2) * foundFractionError) ** 2)
     ) if foundFraction > 0 else None
     viewedNodesFractionError = averageViewedNodesPerSearchError / numberOfLeafNodes if numberOfLeafNodes > 0 else None
+    
+    averageViewedBytesOfFoundSearchesVariance = 0
+    averageViewedBytesOfNotFoundSearchesVariance = 0
+    for result in search_results:
+        if result[1]:
+            averageViewedBytesOfFoundSearchesVariance += (result[4] - averageViewedBytesOfFoundSearches) ** 2
+        else:
+            averageViewedBytesOfNotFoundSearchesVariance += (result[4] - averageViewedBytesOfNotFoundSearches) ** 2
+    averageViewedBytesOfFoundSearchesError = sqrt(averageViewedBytesOfFoundSearchesVariance / numberFound / (numberFound - 1)) if numberFound > 1 else None
+    averageViewedBytesOfNotFoundSearchesError = sqrt(averageViewedBytesOfNotFoundSearchesVariance / numberNotFound / (numberNotFound - 1)) if numberNotFound > 1 else None
+    averageViewedBytesPerSearchError = sqrt(
+        (averageViewedBytesOfFoundSearchesError ** 2) +
+        (((1 / foundFraction - 1) * averageViewedBytesOfNotFoundSearchesError) ** 2) +
+        ((averageViewedBytesOfNotFoundSearches / (foundFraction ** 2) * foundFractionError) ** 2)
+    ) if foundFraction > 0 else None
+    viewedBytesFractionError = averageViewedBytesPerSearchError / numberOfLeafBytes if numberOfLeafBytes > 0 else None
     # Print the results
     print(f"Number of leaf nodes: {numberOfLeafNodes}")
     print(f"Number of searches: {numberOfSearches}")
@@ -413,69 +586,18 @@ def main_calculateAverageViewedTerms():
     print(f"Average viewed nodes of not found searches: {averageViewedNodesOfNotFoundSearches} ± {averageViewedNodesOfNotFoundSearchesError}")
     print(f"Average viewed nodes per search: {averageViewedNodesPerSearch} ± {averageViewedNodesPerSearchError}")
     print(f"Viewed nodes fraction: {viewedNodesFraction} ± {viewedNodesFractionError}")
-
-
-def main_calculateAverageViewedBytes():
-    rootBranch = loadSubtopicTree()
-    numberOfLeafBytes = sum([len(x.name) for x in rootBranch.iterateLeaves()])
-    with (rootpath / "search_results.txt").open("r") as f:
-        search_results = loads(f.read())
-    numberOfSearches = len(search_results)
-    numberFound = 0
-    numberNotFound = 0
-    numberViewedBytesOfFoundSearches = 0
-    numberViewedBytesOfNotFoundSearches = 0
-    for result in search_results:
-        if result[1]:
-            numberFound += 1
-            numberViewedBytesOfFoundSearches += result[4]
-        else:
-            numberNotFound += 1
-            numberViewedBytesOfNotFoundSearches += result[4]
-    foundFraction = numberFound / numberOfSearches if numberOfSearches > 0 else None
-    averageViewedBytesOfFoundSearches = numberViewedBytesOfFoundSearches / numberFound if numberFound > 0 else None
-    averageViewedBytesOfNotFoundSearches = numberViewedBytesOfNotFoundSearches / numberNotFound if numberNotFound > 0 else None
-    averageViewedBytesPerSearch = ((1 / foundFraction) - 1) * averageViewedBytesOfNotFoundSearches + averageViewedBytesOfFoundSearches if foundFraction else None
-    viewedBytesFraction = averageViewedBytesPerSearch / numberOfLeafBytes if numberOfLeafBytes > 0 else None
-    # Calculate the errors
-    averageViewedBytesOfFoundSearchesVariance = 0
-    averageViewedBytesOfNotFoundSearchesVariance = 0
-    for result in search_results:
-        if result[1]:
-            averageViewedBytesOfFoundSearchesVariance += (result[4] - averageViewedBytesOfFoundSearches) ** 2
-        else:
-            averageViewedBytesOfNotFoundSearchesVariance += (result[4] - averageViewedBytesOfNotFoundSearches) ** 2
-    averageViewedBytesOfFoundSearchesError = sqrt(averageViewedBytesOfFoundSearchesVariance / numberFound / (numberFound - 1)) if numberFound > 1 else None
-    averageViewedBytesOfNotFoundSearchesError = sqrt(averageViewedBytesOfNotFoundSearchesVariance / numberNotFound / (numberNotFound - 1)) if numberNotFound > 1 else None
-    numberFoundVariance = 0
-    for k in range(1, numberOfSearches + 1):
-        numberFoundVariance += ((numberFound - k) ** 2) * comb(numberOfSearches, k, exact=True) * (foundFraction ** k) * ((1 - foundFraction) ** (numberOfSearches - k))
-    numberFoundError = sqrt(numberFoundVariance)
-    foundFractionError = numberFoundError / numberOfSearches
-    averageViewedBytesPerSearchError = sqrt(
-        (averageViewedBytesOfFoundSearchesError ** 2) +
-        (((1 / foundFraction - 1) * averageViewedBytesOfNotFoundSearchesError) ** 2) +
-        ((averageViewedBytesOfNotFoundSearches / (foundFraction ** 2) * foundFractionError) ** 2)
-    ) if foundFraction > 0 else None
-    viewedBytesFractionError = averageViewedBytesPerSearchError / numberOfLeafBytes if numberOfLeafBytes > 0 else None
-    # Print the results
-    print(f"Number of leaf bytes: {numberOfLeafBytes}")
-    print(f"Number of searches: {numberOfSearches}")
-    print(f"Number of found searches: {numberFound}")
-    print(f"Number of not found searches: {numberNotFound}")
-    print(f"Found fraction: {foundFraction} ± {foundFractionError}")
     print(f"Average viewed bytes of found searches: {averageViewedBytesOfFoundSearches} ± {averageViewedBytesOfFoundSearchesError}")
     print(f"Average viewed bytes of not found searches: {averageViewedBytesOfNotFoundSearches} ± {averageViewedBytesOfNotFoundSearchesError}")
     print(f"Average viewed bytes per search: {averageViewedBytesPerSearch} ± {averageViewedBytesPerSearchError}")
     print(f"Viewed bytes fraction: {viewedBytesFraction} ± {viewedBytesFractionError}")
 
-#main_addTechnicalTermsToSubtopicTree()
+#main_addTechnicalTermsToSubtopicTree_subdevisionAlgorithm()
+#main_addTechnicalTermsToSubtopicTree_freeAssociationAlgorithm()
 #main_navigateSubtopicTree()
 #main_writeTermPaths()
 #main_plotBranchLengths()
 #main_subtopicTreeStatistics()
 #main_plotLeafDepthDependentOnOrder()
 #main_plotNumberOfSubBranchesPerJunction()
-#main_searchForTerms()
-main_calculateAverageViewedTerms()
-main_calculateAverageViewedBytes()
+main_searchForTerms()
+main_calculateSearchStatistics()
