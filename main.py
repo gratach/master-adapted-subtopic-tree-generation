@@ -5,8 +5,9 @@ from io import StringIO
 from json import loads, dumps
 from scipy.special import comb # pip install scipy
 import matplotlib.pyplot as plt
-from math import sqrt
+from math import sqrt, log, floor
 from random import shuffle
+from adjustText import adjust_text
 rootpath = Path(__file__).parent
 class SubtopicTreeBranch:
     def __init__(self, name, parent, isLeaf = False):
@@ -41,7 +42,7 @@ class SubtopicTreeBranch:
         self.leafCount += delta
         if self.parent:
             self.parent.updateLeafCount(delta)
-    def addTopic_simpleFreeAssociationAlgorithm(self, name):
+    def addTopic_simpleFreeAssociationAlgorithm(self, name, numberOfSubtopics = None):
         if self.isLeaf:
             raise Exception("Cannot add topic to leaf node")
         subtopics = [x for x in self.children if not x.isLeaf]
@@ -58,12 +59,15 @@ class SubtopicTreeBranch:
                 print(f"Failed to choose subtopic of topic {self.name} for keyword {name}")
                 SubtopicTreeBranch(name, self, True)
                 return
-            subtopics[index].addTopic_simpleFreeAssociationAlgorithm(name)
+            subtopics[index].addTopic_simpleFreeAssociationAlgorithm(name, numberOfSubtopics)
         else:
             SubtopicTreeBranch(name, self, True)
             leafs = [x for x in self.children if x.isLeaf]
-            if len(leafs) > 5:
-                query = f'In which subtopics can the topic "{self.name}" be divided? Return nothing but the list of subtopics formatted as: ["subtopic1", "subtopic2", ...]'
+            if len(leafs) > (5 if numberOfSubtopics == None else numberOfSubtopics):
+                if numberOfSubtopics == None:
+                    query = f'In which subtopics can the topic "{self.name}" be divided? Return nothing but the list of subtopics formatted as: ["subtopic1", "subtopic2", ...]'
+                else:
+                    query = f'In which {numberOfSubtopics} subtopics can the topic "{self.name}" be divided? Return nothing but the list of subtopics formatted as: ["subtopic1", "subtopic2", ...]'
                 def answerConversion(answer):
                     subtopics = loads(answer)
                     assert isinstance(subtopics, list)
@@ -79,7 +83,7 @@ class SubtopicTreeBranch:
                 for subtopic in subtopics:
                     SubtopicTreeBranch(subtopic, self, False)
                 for leaf in leafs:
-                    self.addTopic_simpleFreeAssociationAlgorithm(leaf.name)
+                    self.addTopic_simpleFreeAssociationAlgorithm(leaf.name, numberOfSubtopics)
     def addTopic_freeAssociationAlgorithm(self, name):
         if self.isLeaf:
             raise Exception("Cannot add topic to leaf node")
@@ -348,8 +352,10 @@ def gpt_4_turbo_completion(query):
     )
     return answer.choices[0].message.content
 
-def loadSubtopicTree():
-    treepath = rootpath / "subtopic_tree.json"
+def loadSubtopicTree(treeName):
+    treepathparent = rootpath / "trees" / treeName
+    treepathparent.mkdir(parents=True, exist_ok=True)
+    treepath = treepathparent / "subtopic_tree.json"
     if treepath.exists():
         with treepath.open("r") as f:
             rootBranch = SubtopicTreeBranch.loadFromJsonDict(loads(f.read()))
@@ -357,49 +363,50 @@ def loadSubtopicTree():
         rootBranch = SubtopicTreeBranch("Physics", None)
     return rootBranch
 
-def saveSubtopicTree(rootBranch):
-    treepath = rootpath / "subtopic_tree.json"
+def saveSubtopicTree(rootBranch, treeName):
+    treepathparent = rootpath / "trees" / treeName
+    treepath = treepathparent / "subtopic_tree.json"
     with treepath.open("w") as f:
         f.write(dumps(rootBranch.safeAsJsonDict()))
 
-def main_addTechnicalTermsToSubtopicTree_subdevisionAlgorithm():
-    rootBranch = loadSubtopicTree()
+def main_addTechnicalTermsToSubtopicTree_subdevisionAlgorithm(treeName = "subdivision_tree"):
+    rootBranch = loadSubtopicTree(treeName)
     with (rootpath / "technical_terms.txt").open("r") as f:
         technical_terms = f.read().split("\n")
     for technical_term in technical_terms:
         if not rootBranch.findLeaf(technical_term):
             rootBranch.addTopic_subdevisionAlgorithm(technical_term)
-    saveSubtopicTree(rootBranch)
+    saveSubtopicTree(rootBranch, treeName)
 
-def main_addTechnicalTermsToSubtopicTree_freeAssociationAlgorithm():
-    rootBranch = loadSubtopicTree()
+def main_addTechnicalTermsToSubtopicTree_freeAssociationAlgorithm(treeName = "free_association_tree"):
+    rootBranch = loadSubtopicTree(treeName)
     with (rootpath / "technical_terms.txt").open("r") as f:
         technical_terms = f.read().split("\n")
     for technical_term in technical_terms:
         if not rootBranch.findLeaf(technical_term):
             rootBranch.addTopic_freeAssociationAlgorithm(technical_term)
-    saveSubtopicTree(rootBranch)
+    saveSubtopicTree(rootBranch, treeName)
 
-def main_addTechnicalTermsToSubtopicTree_simpleFreeAssociationAlgorithm():
-    rootBranch = loadSubtopicTree()
+def main_addTechnicalTermsToSubtopicTree_simpleFreeAssociationAlgorithm(treeName = "simple_free_association_tree", targetNumberOfSubtopics = None):
+    rootBranch = loadSubtopicTree(treeName)
     with (rootpath / "technical_terms.txt").open("r") as f:
         technical_terms = f.read().split("\n")
     for technical_term in technical_terms:
         if not rootBranch.findLeaf(technical_term):
-            rootBranch.addTopic_simpleFreeAssociationAlgorithm(technical_term)
-    saveSubtopicTree(rootBranch)
+            rootBranch.addTopic_simpleFreeAssociationAlgorithm(technical_term, numberOfSubtopics=targetNumberOfSubtopics)
+    saveSubtopicTree(rootBranch, treeName)
 
-def main_navigateSubtopicTree():
-    rootBranch = loadSubtopicTree()
+def main_navigateSubtopicTree(treeName = "subdivision_tree"):
+    rootBranch = loadSubtopicTree(treeName)
     navigationFunction = rootBranch.interactiveNavigation
     while navigationFunction:
         navigationFunction = navigationFunction()
 
-def main_writeTermPaths():
-    rootBranch = loadSubtopicTree()
+def main_writeTermPaths(treeName = "subdivision_tree"):
+    rootBranch = loadSubtopicTree(treeName)
     with (rootpath / "technical_terms.txt").open("r") as f:
         technical_terms = f.read().split("\n")
-    with (rootpath / "term_paths.txt").open("w") as f:
+    with (rootpath / "trees" / treeName / "term_paths.txt").open("w") as f:
         for term in technical_terms:
             path = rootBranch.findLeaf(term)
             if path:
@@ -407,8 +414,8 @@ def main_writeTermPaths():
             else:
                 print(f"{term}: Not found\n")
 
-def main_plotBranchLengths():
-    rootBranch = loadSubtopicTree()
+def main_plotBranchLengths(treeName = "subdivision_tree"):
+    rootBranch = loadSubtopicTree(treeName)
     with (rootpath / "technical_terms.txt").open("r") as f:
         technical_terms = f.read().split("\n")
     lengths = []
@@ -425,10 +432,12 @@ def main_plotBranchLengths():
     plt.bar(range(1, len(lengths) + 1), lengths)
     plt.xlabel("Depth of term in subtopic tree")
     plt.ylabel("Number of terms")
+    plt.savefig(str(rootpath / "trees" / treeName / "branch_lengths.svg"))
+    plt.savefig(str(rootpath / "trees" / treeName / "branch_lengths.pdf"))
     plt.show()
 
-def main_plotLeafDepthDependentOnOrder():
-    rootBranch = loadSubtopicTree()
+def main_plotLeafDepthDependentOnOrder(treeName = "subdivision_tree"):
+    rootBranch = loadSubtopicTree(treeName)
     with (rootpath / "technical_terms.txt").open("r") as f:
         technical_terms = f.read().split("\n")
     depthArray = []
@@ -441,10 +450,12 @@ def main_plotLeafDepthDependentOnOrder():
     plt.scatter(range(1, len(depthArray) + 1), depthArray)
     plt.xlabel("Addition order of term")
     plt.ylabel("Depth of term in subtopic tree")
+    plt.savefig(str(rootpath / "trees" / treeName / "leaf_depth_dependent_on_order.svg"))
+    plt.savefig(str(rootpath / "trees" / treeName / "leaf_depth_dependent_on_order.pdf"))
     plt.show()
 
-def main_plotNumberOfSubBranchesPerJunction():
-    rootBranch = loadSubtopicTree()
+def main_plotNumberOfSubBranchesPerJunction(treeName = "subdivision_tree"):
+    rootBranch = loadSubtopicTree(treeName)
     numberOfSubBranchesBins = []
     def traverseBranch(branch):
         if not branch.isLeaf:
@@ -458,39 +469,59 @@ def main_plotNumberOfSubBranchesPerJunction():
     plt.bar(range(len(numberOfSubBranchesBins)), numberOfSubBranchesBins)
     plt.xlabel("Number of subbranches")
     plt.ylabel("Number of junction nodes")
+    plt.savefig(str(rootpath / "trees" / treeName / "number_of_subbranches_per_junction.svg"))
+    plt.savefig(str(rootpath / "trees" / treeName / "number_of_subbranches_per_junction.pdf"))
     plt.show()
 
-def main_subtopicTreeStatistics():
-    rootBranch = loadSubtopicTree()
+def main_subtopicTreeStatistics(treeName = "subdivision_tree"):
+    rootBranch = loadSubtopicTree(treeName)
     numberLeafNodes = 0
     leafDepthSum = 0
     numberJunctionNodes = 0
+    subbranchesPerSupportingJunctionNodeSum = 0
     def traverseBranch(branch, depth):
         nonlocal numberLeafNodes
         nonlocal leafDepthSum
         nonlocal numberJunctionNodes
+        nonlocal subbranchesPerSupportingJunctionNodeSum
         if branch.isLeaf:
             numberLeafNodes += 1
             leafDepthSum += depth
         else:
             if branch.leafCount > 0:
                 numberJunctionNodes += 1
+                subbranchesPerSupportingJunctionNodeSum += len(branch.children)
             for child in branch.children:
                 traverseBranch(child, depth + 1)
     traverseBranch(rootBranch, 0)
     print(f"Number of leaf nodes: {numberLeafNodes}")
     print(f"Average depth of leaf nodes: {leafDepthSum / numberLeafNodes}")
     print(f"Number of supporting junction nodes: {numberJunctionNodes}")
+    print(f"Average number of subbranches per supporting junction node: {subbranchesPerSupportingJunctionNodeSum / numberJunctionNodes}")
+    (rootpath / "trees" / treeName / "statistics.json").write_text(dumps({
+        "numberLeafNodes": numberLeafNodes,
+        "averageDepthOfLeafNodes": leafDepthSum / numberLeafNodes,
+        "numberJunctionNodes": numberJunctionNodes,
+        "averageNumberOfSubbranchesPerSupportingJunctionNode": subbranchesPerSupportingJunctionNodeSum / numberJunctionNodes
+    }, indent=4))
 
-def main_searchForTerms():
-    numberOfSearches = 100
-    rootBranch = loadSubtopicTree()
+def main_searchForTerms(treeName = "subdivision_tree", numberOfSearches = 100):
+    rootBranch = loadSubtopicTree(treeName)
+    searchResultPath = rootpath / "trees" / treeName / "search_results.txt"
+    if searchResultPath.exists():
+        previousSearchResults = loads(searchResultPath.read_text())
+    else:
+        previousSearchResults = []
     with (rootpath / "technical_terms.txt").open("r") as f:
         search_terms = f.read().split("\n")
     search_results = [] # Format: (name_of_term, is_found, serch_path, number_of_viewed_nodes, number_of_viewed_bytes)
-    with (rootpath / "search_results.txt").open("w") as f:
+    with (searchResultPath).open("w") as f:
         f.write("[\n")
-        for i in range(numberOfSearches):
+        for i, search_result in enumerate(previousSearchResults):
+            f.write("    " + dumps(search_result) + (",\n" if (i + 1 < len(previousSearchResults) or i + 1 < numberOfSearches) else "\n"))
+        f.flush()
+        i = len(previousSearchResults)
+        while i < numberOfSearches:
             search_term = search_terms[randint(0, len(search_terms) - 1)]
             branch = rootBranch
             serchPath = [branch.name]
@@ -505,13 +536,14 @@ def main_searchForTerms():
             search_results.append((search_term, branch != None and branch.isLeaf and branch.name == search_term, serchPath, viewedNodes, viewedBytes))
             f.write("    " + dumps(search_results[-1]) + ("," if i + 1 < numberOfSearches else "") + "\n")
             f.flush()
+            i += 1
         f.write("]\n")
 
-def main_calculateSearchStatistics():
-    rootBranch = loadSubtopicTree()
+def main_calculateSearchStatistics(treeName = "subdivision_tree"):
+    rootBranch = loadSubtopicTree(treeName)
     numberOfLeafNodes = rootBranch.leafCount
     numberOfLeafBytes = sum([len(x.name) for x in rootBranch.iterateLeaves()])
-    with (rootpath / "search_results.txt").open("r") as f:
+    with (rootpath / "trees" / treeName / "search_results.txt").open("r") as f:
         search_results = loads(f.read())
     numberOfSearches = len(search_results)
     numberFound = 0
@@ -540,7 +572,7 @@ def main_calculateSearchStatistics():
     viewedBytesFraction = averageViewedBytesPerSearch / numberOfLeafBytes if numberOfLeafBytes > 0 else None
     # Calculate the errors
     numberFoundVariance = 0
-    for k in range(1, numberOfSearches + 1):
+    for k in range(0, numberOfSearches + 1):
         numberFoundVariance += ((numberFound - k) ** 2) * comb(numberOfSearches, k, exact=True) * (foundFraction ** k) * ((1 - foundFraction) ** (numberOfSearches - k))
     numberFoundError = sqrt(numberFoundVariance)
     foundFractionError = numberFoundError / numberOfSearches
@@ -577,27 +609,152 @@ def main_calculateSearchStatistics():
     ) if foundFraction > 0 else None
     viewedBytesFractionError = averageViewedBytesPerSearchError / numberOfLeafBytes if numberOfLeafBytes > 0 else None
     # Print the results
+    searchStatisticsPath = rootpath / "trees" / treeName / "search_statistics.json"
+    searchStatisticsJson = {} if not searchStatisticsPath.exists() else loads(searchStatisticsPath.read_text())
+    searchStatisticsJson.update({
+        "numberOfLeafNodes": numberOfLeafNodes,
+        "numberOfSearches": numberOfSearches,
+        "numberFound": numberFound,
+        "numberNotFound": numberNotFound,
+        "foundFraction": foundFraction,
+        "foundFractionError": foundFractionError,
+        "averageViewedNodesOfFoundSearches": averageViewedNodesOfFoundSearches,
+        "averageViewedNodesOfFoundSearchesError": averageViewedNodesOfFoundSearchesError,
+        "averageViewedNodesOfNotFoundSearches": averageViewedNodesOfNotFoundSearches,
+        "averageViewedNodesOfNotFoundSearchesError": averageViewedNodesOfNotFoundSearchesError,
+        "averageViewedNodesPerSearch": averageViewedNodesPerSearch,
+        "averageViewedNodesPerSearchError": averageViewedNodesPerSearchError,
+        "viewedNodesFraction": viewedNodesFraction,
+        "viewedNodesFractionError": viewedNodesFractionError,
+        "averageViewedBytesOfFoundSearches": averageViewedBytesOfFoundSearches,
+        "averageViewedBytesOfFoundSearchesError": averageViewedBytesOfFoundSearchesError,
+        "averageViewedBytesOfNotFoundSearches": averageViewedBytesOfNotFoundSearches,
+        "averageViewedBytesOfNotFoundSearchesError": averageViewedBytesOfNotFoundSearchesError,
+        "averageViewedBytesPerSearch": averageViewedBytesPerSearch,
+        "averageViewedBytesPerSearchError": averageViewedBytesPerSearchError,
+        "viewedBytesFraction": viewedBytesFraction,
+        "viewedBytesFractionError": viewedBytesFractionError
+    })
+    searchStatisticsPath.write_text(dumps(searchStatisticsJson, indent=4))
     print(f"Number of leaf nodes: {numberOfLeafNodes}")
     print(f"Number of searches: {numberOfSearches}")
     print(f"Number of found searches: {numberFound}")
     print(f"Number of not found searches: {numberNotFound}")
-    print(f"Found fraction: {foundFraction} ± {foundFractionError}")
-    print(f"Average viewed nodes of found searches: {averageViewedNodesOfFoundSearches} ± {averageViewedNodesOfFoundSearchesError}")
-    print(f"Average viewed nodes of not found searches: {averageViewedNodesOfNotFoundSearches} ± {averageViewedNodesOfNotFoundSearchesError}")
-    print(f"Average viewed nodes per search: {averageViewedNodesPerSearch} ± {averageViewedNodesPerSearchError}")
-    print(f"Viewed nodes fraction: {viewedNodesFraction} ± {viewedNodesFractionError}")
-    print(f"Average viewed bytes of found searches: {averageViewedBytesOfFoundSearches} ± {averageViewedBytesOfFoundSearchesError}")
-    print(f"Average viewed bytes of not found searches: {averageViewedBytesOfNotFoundSearches} ± {averageViewedBytesOfNotFoundSearchesError}")
-    print(f"Average viewed bytes per search: {averageViewedBytesPerSearch} ± {averageViewedBytesPerSearchError}")
-    print(f"Viewed bytes fraction: {viewedBytesFraction} ± {viewedBytesFractionError}")
+    print(f"Found fraction: {foundFraction} \u00b1 {foundFractionError}")
+    print(f"Average viewed nodes of found searches: {averageViewedNodesOfFoundSearches} \u00b1 {averageViewedNodesOfFoundSearchesError}")
+    print(f"Average viewed nodes of not found searches: {averageViewedNodesOfNotFoundSearches} \u00b1 {averageViewedNodesOfNotFoundSearchesError}")
+    print(f"Average viewed nodes per search: {averageViewedNodesPerSearch} \u00b1 {averageViewedNodesPerSearchError}")
+    print(f"Viewed nodes fraction: {viewedNodesFraction} \u00b1 {viewedNodesFractionError}")
+    print(f"Average viewed bytes of found searches: {averageViewedBytesOfFoundSearches} \u00b1 {averageViewedBytesOfFoundSearchesError}")
+    print(f"Average viewed bytes of not found searches: {averageViewedBytesOfNotFoundSearches} \u00b1 {averageViewedBytesOfNotFoundSearchesError}")
+    print(f"Average viewed bytes per search: {averageViewedBytesPerSearch} \u00b1 {averageViewedBytesPerSearchError}")
+    print(f"Viewed bytes fraction: {viewedBytesFraction} \u00b1 {viewedBytesFractionError}")
 
+def main_calculateChoiceCorrectness(treeName = "subdivision_tree"):
+    rootBranch = loadSubtopicTree(treeName)
+    with (rootpath / "trees" / treeName / "search_results.txt").open("r") as f:
+        search_results = loads(f.read())
+    totalChoices = 0
+    correctChoices = 0
+    for result in search_results:
+        if result[1]:
+            totalChoices += len(result[2]) - 2
+            correctChoices += len(result[2]) - 2
+        else:
+            correctPath = rootBranch.findLeaf(result[0])
+            for i, branchName in enumerate(result[2][1:-1]):
+                if branchName == correctPath[i + 1]:
+                    correctChoices += 1
+                    totalChoices += 1
+                else:
+                    totalChoices += 1
+                    break
+    correctChoicesFraction = correctChoices / totalChoices if totalChoices > 0 else None
+    correctChoicesVariance = 0
+    for k in range(0, totalChoices + 1):
+        correctChoicesVariance += ((correctChoices - k) ** 2) * comb(totalChoices, k, exact=True) * (correctChoicesFraction ** k) * ((1 - correctChoicesFraction) ** (totalChoices - k))
+    correctChoicesError = sqrt(correctChoicesVariance)
+    correctChoicesFractionError = correctChoicesError / totalChoices if totalChoices > 0 else None
+    print(f"Correct choice fraction: {correctChoicesFraction} \u00b1 {correctChoicesFractionError}")
+    searchStatisticsPath = rootpath / "trees" / treeName / "search_statistics.json"
+    searchStatisticsJson = {} if not searchStatisticsPath.exists() else loads(searchStatisticsPath.read_text())
+    searchStatisticsJson.update({
+        "correctChoices": correctChoices,
+        "correctChoicesError": correctChoicesError,
+        "totalChoices": totalChoices,
+        "correctChoicesFraction": correctChoicesFraction,
+        "correctChoicesFractionError": correctChoicesFractionError
+    })
+    searchStatisticsPath.write_text(dumps(searchStatisticsJson, indent=4))
+
+def main_plotDifferentTreesComparison(treeNameBeginning = ""):
+    treeNames = [x.name for x in (rootpath / "trees").iterdir() if x.is_dir() and x.name.startswith(treeNameBeginning)]
+    fig, ax = plt.subplots()
+    text_lables = []
+    for treeName in treeNames:
+        treePath = rootpath / "trees" / treeName
+        searchStatistics = loads((treePath / "search_statistics.json").read_text())
+        statistics = loads((treePath / "statistics.json").read_text())
+        x = statistics["averageDepthOfLeafNodes"]
+        y = searchStatistics["viewedBytesFraction"]
+        yerr = searchStatistics["viewedBytesFractionError"]
+        ax.plot(x, y, 'o', label=treeName)
+        ax.errorbar(x, y, yerr=yerr, fmt='o')
+        text_lables.append(ax.text(x, y, treeName, ha='center', va='center'))
+    adjust_text(text_lables)
+    ax.set_xlabel("Average term depth")
+    ax.set_ylabel("Viewed bytes fraction")
+    # show the plot
+    plt.savefig(str(rootpath / "trees" / f"{treeNameBeginning}comparison.svg"))
+    plt.savefig(str(rootpath / "trees" / f"{treeNameBeginning}comparison.pdf"))
+    plt.show()
+
+def main_writeDifferentTreesComparisonTable():
+    treeNames = [x.name for x in (rootpath / "trees").iterdir() if x.is_dir()]
+    with (rootpath / "trees" / "comparison_table.csv").open("w") as f:
+        f.write("Tree,Average term depth, Average number of subbranches per supporting junction node, Average viewed nodes fraction, Average viewed bytes fraction,Average choice correctness percentage\n")
+        for treeName in treeNames:
+            treePath = rootpath / "trees" / treeName
+            searchStatistics = loads((treePath / "search_statistics.json").read_text())
+            statistics = loads((treePath / "statistics.json").read_text())
+            averageDepthOfLeafNodes = statistics["averageDepthOfLeafNodes"]
+            averageDepthOfLeafNodesString = "%g"%round(averageDepthOfLeafNodes, -int(floor(log(averageDepthOfLeafNodes, 10))) + 2)
+            averageNumberOfSubbranchesPerSupportingJunctionNode = statistics["averageNumberOfSubbranchesPerSupportingJunctionNode"]
+            averageNumberOfSubbranchesPerSupportingJunctionNodeString = "%g"%round(averageNumberOfSubbranchesPerSupportingJunctionNode, -int(floor(log(averageNumberOfSubbranchesPerSupportingJunctionNode, 10))) + 2)
+            viewedNodesPercentage = searchStatistics["viewedNodesFraction"] * 100
+            viewedNodesPercentageError = searchStatistics["viewedNodesFractionError"] * 100
+            viewedNodesRoundingPrecision = - int(floor(log(viewedNodesPercentageError, 10))) + 2
+            viewedNodesString = "%g"%round(viewedNodesPercentage, viewedNodesRoundingPrecision) + " \u00b1 %g"%round(viewedNodesPercentageError, viewedNodesRoundingPrecision) + "%" # The unicode character is the plus-minus sign
+            viewedBytesPercentage = searchStatistics["viewedBytesFraction"] * 100
+            viewedBytesPercentageError = searchStatistics["viewedBytesFractionError"] * 100
+            viewedBytesRoundingPrecision = - int(floor(log(viewedBytesPercentageError, 10))) + 2
+            viewedBytesString = "%g"%round(viewedBytesPercentage, viewedBytesRoundingPrecision) + " \u00b1 %g"%round(viewedBytesPercentageError, viewedBytesRoundingPrecision) + "%" # The unicode character is the plus-minus sign
+            correctChoicesPercentage = searchStatistics["correctChoicesFraction"] * 100
+            correctChoicesPercentageError = searchStatistics["correctChoicesFractionError"] * 100
+            correctChoicesRoundingPrecision = - int(floor(log(correctChoicesPercentageError, 10))) + 2
+            correctChoicesString = "%g"%round(correctChoicesPercentage, correctChoicesRoundingPrecision) + " \u00b1 %g"%round(correctChoicesPercentageError, correctChoicesRoundingPrecision) + "%" # The unicode character is the plus-minus sign
+            f.write(f"{treeName},{averageDepthOfLeafNodesString},{averageNumberOfSubbranchesPerSupportingJunctionNodeString},{viewedNodesString},{viewedBytesString},{correctChoicesString}\n")
+
+def main_calculateAllTreeStatistics():
+    treeNames = [x.name for x in (rootpath / "trees").iterdir() if x.is_dir()]
+    for treeName in treeNames:
+        main_subtopicTreeStatistics(treeName)
+        main_calculateSearchStatistics(treeName)
+        main_calculateChoiceCorrectness(treeName)
+
+treeName = "fr_as_rsb_16"
 #main_addTechnicalTermsToSubtopicTree_subdevisionAlgorithm()
 #main_addTechnicalTermsToSubtopicTree_freeAssociationAlgorithm()
-#main_navigateSubtopicTree()
+#main_addTechnicalTermsToSubtopicTree_simpleFreeAssociationAlgorithm(treeName, targetNumberOfSubtopics=10)
+#main_navigateSubtopicTree(treeName)
 #main_writeTermPaths()
-#main_plotBranchLengths()
-#main_subtopicTreeStatistics()
+#main_plotBranchLengths(treeName)
+#main_subtopicTreeStatistics(treeName)
 #main_plotLeafDepthDependentOnOrder()
-#main_plotNumberOfSubBranchesPerJunction()
-main_searchForTerms()
-main_calculateSearchStatistics()
+#main_plotNumberOfSubBranchesPerJunction(treeName)
+#main_searchForTerms(treeName, numberOfSearches=100)
+#main_calculateSearchStatistics(treeName)
+#main_calculateChoiceCorrectness(treeName)
+#main_plotDifferentTreesComparison()
+main_calculateAllTreeStatistics()
+main_writeDifferentTreesComparisonTable()
