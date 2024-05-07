@@ -1,4 +1,6 @@
 .venv/
 *.txt
+*.pyc
 subtopic_tree.json
 trees/
+correlations/

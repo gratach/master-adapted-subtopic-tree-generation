@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from math import sqrt, log, floor
 from random import shuffle
 from adjustText import adjust_text
+from mastg_lib import gpt_3_5_turbo_completion, gpt_4_turbo_completion, tryRecieveAnswer
 rootpath = Path(__file__).parent
 class SubtopicTreeBranch:
     def __init__(self, name, parent, isLeaf = False):
@@ -312,45 +313,7 @@ class SubtopicTreeBranch:
                 yield from child.iterateLeaves()
 
 
-def tryRecieveAnswer(query, completionFunction, answerConversion = lambda x: True, maxTries = 10):
-    tryNumber = 0
-    while tryNumber < maxTries:
-        answer = completionFunction(query)
-        try:
-            answer = answerConversion(answer)
-            return (answer, True)
-        except:
-            pass
-        tryNumber += 1
-    print(f"Failed to recieve answer for query: {query}")
-    return (None, False)
 
-openaiClient = OpenAI()
-def gpt_3_5_turbo_completion(query):
-    answer = openaiClient.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {
-                "role": "system",
-                "content": query
-            }
-        ],
-        seed = randint(0, 1000000)
-    )
-    return answer.choices[0].message.content
-
-def gpt_4_turbo_completion(query):
-    answer = openaiClient.chat.completions.create(
-        model="gpt-4-turbo",
-        messages=[
-            {
-                "role": "system",
-                "content": query
-            }
-        ],
-        seed = randint(0, 1000000)
-    )
-    return answer.choices[0].message.content
 
 def loadSubtopicTree(treeName):
     treepathparent = rootpath / "trees" / treeName
@@ -756,5 +719,5 @@ treeName = "fr_as_rsb_16"
 #main_calculateSearchStatistics(treeName)
 #main_calculateChoiceCorrectness(treeName)
 #main_plotDifferentTreesComparison()
-main_calculateAllTreeStatistics()
+#main_calculateAllTreeStatistics()
 main_writeDifferentTreesComparisonTable()
