@@ -62,10 +62,9 @@ def navigateCorrelationGraph(correlationsName, startNodeIndex = None):
                 indexes = [i for i, node in enumerate(graph) if termName in node[0]]
                 if len(indexes) == 0:
                     print("Term not found.")
-                elif len(indexes) == 1:
-                    index = indexes[0]
                 else:
-                    print("Multiple terms found.")
+                    indexes = sorted(indexes, key = lambda x: len(graph[x][0]))
+                    index = indexes[0]
             elif choice.startswith("connect "):
                 termName = choice[8:]
                 indexes = [i for i, node in enumerate(graph) if node[0] == termName]
@@ -141,6 +140,8 @@ def generateCorrelationGraphStatistic(correlationsName):
     statisticsJson["connectedSubGraphCount"] = countConnectedSubGraphs(graph)
     statisticsJson["averagePathLength"] = calculateAveragePathLength(graph)
     statisticsJson["hasError"] = len([j for i, node in enumerate(graph) for j in node[1] if i not in graph[j][1]]) > 0
+    statisticsJson["containsDuplicates"] = sum([len([y for y in graph if y[0] == x[0]]) - 1 for x in graph]) > 0
+    statisticsJson["containsDuplicateConnections"] = sum([len([j for j in x[1] if i == j]) - 1 for x in graph for i in x[1]]) > 0
     statisticsPath.write_text(dumps(statisticsJson, indent=4))
     print(dumps(statisticsJson, indent=4))
 
@@ -163,7 +164,7 @@ def createMostImportantCorrelations(targetCorrelationsName, sourceCorrelationsNa
             continue
         selection = [x for x in sourceGraph[i][1] if not x in targetGraph[i][1]]
         # If the selection count is smaller than the maximum selection count, fill it up with random nodes.
-        notSelectedNodes = [j for j in range(len(sourceGraph)) if j not in selection]
+        notSelectedNodes = [j for j in range(len(sourceGraph)) if j not in selection and j != i]
         while len(selection) < maxSelection:
             selection.append(notSelectedNodes.pop(randint(0, len(notSelectedNodes) - 1)))
         # Find the most important nodes
@@ -199,10 +200,24 @@ def printMostConnectedTerms(correlationsName, numberOfTerms):
     for i in sorted(range(len(graph)), key = lambda x: len(graph[x][1]), reverse = True)[:numberOfTerms]:
         print(f"{graph[i][0]}: {len(graph[i][1])} connections")
 
+def printSelfCorrelatedTerms(correlationsName):
+    graph = loads((rootpath / "correlations" / correlationsName / "graph.json").read_text())
+    for i, node in enumerate(graph):
+        if i in node[1]:
+            print(node[0])
+def removeSelfCorrelatedTerms(correlationsName):
+    graph = loads((rootpath / "correlations" / correlationsName / "graph.json").read_text())
+    for i, node in enumerate(graph):
+        while i in node[1]:
+            node[1].remove(i)
+    (rootpath / "correlations" / correlationsName / "graph.json").write_text(dumps(graph, indent=4))
+
 #createCorrelationGraphFromSubtopicTreeNeighborhoods("tree_cor")
-navigateCorrelationGraph("tree_cor_mi_man")
-#generateCorrelationGraphStatistic("tree_cor_mi_man")
+generateCorrelationGraphStatistic("tree_cor")
+#navigateCorrelationGraph("tree_cor_mi_man")
 #createMostImportantCorrelations("tree_cor_mi", "tree_cor", 5, 20)
 #printMostConnectedTerms("tree_cor_mi_man", 10)
+#printSelfCorrelatedTerms("tree_cor_mi")
+#removeSelfCorrelatedTerms("tree_cor_mi_man")
         
         

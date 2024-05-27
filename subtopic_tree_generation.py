@@ -705,19 +705,19 @@ def main_calculateAllTreeStatistics():
         main_calculateSearchStatistics(treeName)
         main_calculateChoiceCorrectness(treeName)
 
-treeName = "fr_as_rsb_16"
+treeName = "fr_as_rsb_15"
 #main_addTechnicalTermsToSubtopicTree_subdevisionAlgorithm()
 #main_addTechnicalTermsToSubtopicTree_freeAssociationAlgorithm()
 #main_addTechnicalTermsToSubtopicTree_simpleFreeAssociationAlgorithm(treeName, targetNumberOfSubtopics=10)
 #main_navigateSubtopicTree(treeName)
 #main_writeTermPaths()
-#main_plotBranchLengths(treeName)
+main_plotBranchLengths(treeName)
 #main_subtopicTreeStatistics(treeName)
 #main_plotLeafDepthDependentOnOrder()
-#main_plotNumberOfSubBranchesPerJunction(treeName)
+main_plotNumberOfSubBranchesPerJunction(treeName)
 #main_searchForTerms(treeName, numberOfSearches=100)
 #main_calculateSearchStatistics(treeName)
 #main_calculateChoiceCorrectness(treeName)
 #main_plotDifferentTreesComparison()
 #main_calculateAllTreeStatistics()
-main_writeDifferentTreesComparisonTable()
+#main_writeDifferentTreesComparisonTable()
