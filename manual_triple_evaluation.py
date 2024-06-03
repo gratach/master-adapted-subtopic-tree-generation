@@ -193,8 +193,8 @@ def createEvaluationStatistics(triplesName):
     trueTriplesCount = len([triple for triple, valid, truth, _, _ in tripleEvaluations if valid and truth == True])
     falseTriplesCount = len([triple for triple, valid, truth, _, _ in tripleEvaluations if valid and truth == False])
     unknownTriplesCount = len([triple for triple, valid, truth, _, _ in tripleEvaluations if valid and truth == None])
-    averageTrivialityScore, trivialityError = calculateAverageWithError([triviality for triple, valid, _, _, triviality in tripleEvaluations if valid])
-    averageContextDependenceScore, contextDependenceError = calculateAverageWithError([contextDependence for triple, valid, _, contextDependence, _ in tripleEvaluations if valid])
+    averageTrivialityScore, trivialityError = calculateAverageWithError([triviality for triple, valid, truth, _, triviality in tripleEvaluations if valid and truth == True])
+    averageContextDependenceScore, contextDependenceError = calculateAverageWithError([contextDependence for triple, valid, truth, contextDependence, _ in tripleEvaluations if valid and truth == True])
     validTripleProportion, validTripleError = calculateProportionWithErrorOfBinaryEvent(totalTripleCount, validTripleCount)
     trueTripleProportion, trueTripleError = calculateProportionWithErrorOfBinaryEvent(trueTriplesCount + falseTriplesCount, trueTriplesCount)
     unknownTripleProportion, unknownTripleError = calculateProportionWithErrorOfBinaryEvent(validTripleCount, unknownTriplesCount)
@@ -224,8 +224,8 @@ def plotHeatmapOfTrivialityAndContextDependence(triplesName):
     tripleEvaluations = loads(triplesEvaluationPath.read_text())
     # The triviality and context dependence scores are in the range of 0-10
     field = [[0 for _ in range(11)] for _ in range(11)]
-    for triple, valid, _, contextDependence, triviality in tripleEvaluations:
-        if valid:
+    for triple, valid, truth, contextDependence, triviality in tripleEvaluations:
+        if valid and truth == True:
             field[contextDependence][triviality] += 1
     # Plot the heatmap with matplotlib
     fig, ax = plt.subplots()
@@ -238,22 +238,24 @@ def plotHeatmapOfTrivialityAndContextDependence(triplesName):
             text = ax.text(j, i, field[i][j], ha="center", va="center", color="w")
     ax.set_xlabel("Triviality")
     ax.set_ylabel("Context Dependence")
-    ax.set_title("Heatmap of Context Dependence and Triviality Scores")
+    #ax.set_title("Heatmap of Context Dependence and Triviality Scores")
     fig.tight_layout()
-    plt.show()
+    plt.savefig(str(rootpath / "triples" / triplesName / "heatmap.svg"))
+    plt.savefig(str(rootpath / "triples" / triplesName / "heatmap.pdf"))
+    #plt.show()
     
 
 #generateAdditionalFreeAssociatedTriples("free_ass_gpt4", 90, gpt_4_turbo_completion)
 #generateAdditionalFreeAssociatedTriples("free_ass_gpt3_5", 1, gpt_3_5_turbo_completion)
-manuallyEvaluateTriples()
+#manuallyEvaluateTriples()
 #createShuffledTechnicalTermsList()
 #generateSubjectObjectClone("tri_1_curated", "tri_1_curated_gpt4", 480, gpt_4_turbo_completion)
 #sortTriplesInOrderOfSubjectListAndShortenThemTo5PerSubject("tri_1", "tri_1_curated")
-#createEvaluationStatistics("tri_1_curated")
-#createEvaluationStatistics("tri_1_curated_gpt4")
-#createEvaluationStatistics("free_ass_gpt3_5")
-#createEvaluationStatistics("free_ass_gpt4")
-#plotHeatmapOfTrivialityAndContextDependence("tri_1_curated")
-#plotHeatmapOfTrivialityAndContextDependence("tri_1_curated_gpt4")
-#plotHeatmapOfTrivialityAndContextDependence("free_ass_gpt3_5")
-#plotHeatmapOfTrivialityAndContextDependence("free_ass_gpt4")
+createEvaluationStatistics("tri_1_sel_gpt3_5")
+createEvaluationStatistics("tri_1_sel_gpt4")
+createEvaluationStatistics("free_ass_gpt3_5")
+createEvaluationStatistics("free_ass_gpt4")
+plotHeatmapOfTrivialityAndContextDependence("tri_1_sel_gpt3_5")
+plotHeatmapOfTrivialityAndContextDependence("tri_1_sel_gpt4")
+plotHeatmapOfTrivialityAndContextDependence("free_ass_gpt3_5")
+plotHeatmapOfTrivialityAndContextDependence("free_ass_gpt4")
